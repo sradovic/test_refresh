@@ -1,0 +1,8 @@
+/backup
+/logs
+/old
+/tmp
+components
+deployimage*
+importcerts
+pullsite*

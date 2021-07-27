@@ -1,0 +1,11 @@
+org.quartz.scheduler.instanceId =
+org.quartz.scheduler.instanceName=
+org.quartz.scheduler.rmi.bindName=
+org.quartz.scheduler.rmi.proxy=
+org.quartz.scheduler.rmi.registryHost=
+org.quartz.scheduler.rmi.registryPort=
+org.quartz.scheduler.wrapJobExecutionInUserTransaction=
+org.quartz.threadPool.class=
+org.quartz.threadPool.threadCount=
+org.quartz.threadPool.threadPriority=
+org.quartz.threadPool.threadsInheritContextClassLoaderOfInitializingThread=

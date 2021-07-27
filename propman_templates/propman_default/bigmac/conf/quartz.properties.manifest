@@ -1,0 +1,17 @@
+org.quartz.dataSource.qzDS.jndiURL=
+org.quartz.jobStore.class=
+org.quartz.jobStore.dataSource=
+org.quartz.jobStore.driverDelegateClass=
+org.quartz.jobStore.misfireThreshold=
+org.quartz.jobStore.tablePrefix=
+org.quartz.scheduler.instanceId =
+org.quartz.scheduler.instanceName=
+org.quartz.scheduler.rmi.createRegistry =
+org.quartz.scheduler.rmi.export =
+org.quartz.scheduler.rmi.registryHost =
+org.quartz.scheduler.rmi.registryPort =
+org.quartz.scheduler.wrapJobExecutionInUserTransaction=
+org.quartz.threadPool.class=
+org.quartz.threadPool.threadCount=
+org.quartz.threadPool.threadPriority=
+org.quartz.threadPool.threadsInheritContextClassLoaderOfInitializingThread=

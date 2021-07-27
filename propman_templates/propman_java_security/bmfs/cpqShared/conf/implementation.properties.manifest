@@ -1,0 +1,15 @@
+allow_company_currency_change=
+allowed_partner_domains=
+config_cache_segments=
+display_currency_code=
+enable_approval_notification=
+error_invalid_partner_domains=
+grouping_separator=
+iframe_domain_whitelist=
+middleware_vendor_name=
+partner_login_server=REPLACE
+partner_max_export_size=
+partner_max_import_size=
+supported_currency_codes=
+validate_soap_request=
+validate_soap_response=

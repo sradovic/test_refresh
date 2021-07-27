@@ -1,0 +1,35 @@
+#!/bin/bash
+getArgs() {
+        while [[ ${#} > 0 ]]; do
+                local l_arg="${1}";
+                case ${l_arg} in
+				
+			-t)
+			   	SITE=${2:=null};
+				shift 2;
+				;;
+                        -b)
+                                b='-b';
+                                shift 1;
+                                ;;
+								
+			-i)
+				image=${OPTARG};
+				path="no";
+				shift 2;
+				;;
+                        *)
+                                echo "!!!! Unknown argument: ${2}";
+                                usage;
+                                return 1;
+                                ;;
+                esac;
+        done;
+}
+
+main () {
+getArgs "${@}"
+echo "$b"
+echo "Site is $SITE"
+}
+time main "${@}" || exit ${?};

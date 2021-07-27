@@ -1,0 +1,129 @@
+#!/bin/env bash
+## ---------------------------------------------------------------------------
+## This software is the confidential and proprietary information
+## ("Confidential Information") of Oracle and/or its affiliates
+## ("The Company").
+## You shall not disclose such Confidential Information and shall use
+## and alter it only in accordance with the terms of the agreement(s)
+## you entered into with Oracle and/or its affiliates.
+## ---------------------------------------------------------------------------
+##
+## Team: Oracle CPQ
+##
+## Bundle: cpq-tools
+##
+## Created by adam.yeager on December 17, 2018
+##
+## Copyright (c) 2018, Oracle and/or its affiliates. All rights reserved.
+##
+## ---------------------------------------------------------------------------
+g_action="${1^^}";
+g_target="${2}";
+
+g_bigmac="/bigmac";
+g_backup="/var/tmp/propman";
+g_bmfs="/bmfs";
+
+g_conf_shared="${g_bmfs}/cpqShared/conf";
+g_conf_storage="/var/tmp/propman";
+g_conf_bigmac="${g_bigmac}/conf";
+
+g_propdirs=(${g_conf_shared} ${g_conf_bigmac});
+g_propfiles=();
+
+g_rsync="rsync --relative --archive";
+
+usage() {
+	echo "Usage: propman delete|generate|replace|restore target";
+	exit 1;
+}
+
+[[ -z ${g_action} || -z ${g_target} ]] && usage;
+#TODO: Add a check for valid manifests.
+if   [[ ${g_action} == "REPLACE"  ]]; then
+	ssh -t -t ${g_target} "
+		${g_rsync} --ignore-times ${g_propdirs[@]} ${g_conf_storage}/ || exit 1;
+	" || exit 1;
+elif [[ ${g_action} == "RESTORE"  ]]; then
+	ssh -t -t ${g_target} "
+		set +H;
+		oldifs=\${IFS};
+		echo '#### Restoring based on property manifests';
+		for x in \$(grep -H -P -o -e '((?!.*=\s*$)(?!^\s*$)(^[^#].*))|(.*==+)' \$(find ${g_backup} -type f -name *.properties.manifest -printf '%p\n')); do
+			file=\$(echo \${x} | sed -r \"s#^${g_backup}(.*).manifest:([^=]*=)(.*)#\1#g\");
+			property=\$(echo \${x} | sed -r \"s#^${g_backup}(.*).manifest:([^=]*=)(.*)#\2#g\");
+			value=\$(echo \${x} | sed -r \"s#^${g_backup}(.*).manifest:([^=]*=)(.*)#\3#g\");
+			perms=\$(stat -c '%a' \${file});
+			sudo chmod 666 \${file};
+			if [[ \$(basename \${file}) != \"node1.properties\" ]]; then
+				if [[ \${value} == \"REPLACE\" ]]; then
+				value=\$(egrep \"^\${property}\" ${g_backup}\${file} | sed -r \"s#^([^=]*=)(.*)#\2#g\");
+				fi;
+				# sed -i option creates a tmp file in the directory of the file it is editing, secondary file + tmp needed to work around this.
+				sed -r \"s#\${property}.*#\${property}\${value}#g\" \${file} >${g_backup}\${file}.propmantmp;
+				cat ${g_backup}\${file}.propmantmp > \${file};
+				rm -f ${g_backup}\${file}.propmantmp;
+				echo \"#### [\${file}]::[\${property}]::[\${value}]\";
+			else
+				if [[ \${value} == \"REPLACE\" ]]; then
+					value=\$(grep \${property} <( \
+						sed -r \"/^java_args=/ s/\\s+-|^java_args=-/\\n/g\" ${g_backup}\${file} | \
+						sed -r 's#(Xmx|Xms|Xss|Xmn|Xbootclasspath:|Xloggc:|Xcheck:|Xshare:)(.*)#\\1=\\2#g' | \
+						grep -v \"^\\s*$\" | \
+						sort) | \
+					sed -r \"s#^([^=]*=)(.*)#\2#g\");
+				fi;
+				echo \"java_args=\$(sed -r \"s#\${property}.*#\${property}\${value}#g\" <( \
+					sed -r \"/^java_args=/ s/\\s+-|^java_args=-/\\n/g\" \${file} | \
+					sed -r \"s#(Xmx|Xms|Xss|Xmn|Xbootclasspath:|Xloggc:|Xcheck:|Xshare:)(.*)#\\1=\\2#g\" | \
+					grep -v \"^\\s*$\" | \
+					sort) | \
+				sed -r \"s#(Xmx|Xms|Xss|Xmn|Xbootclasspath:|Xloggc:|Xcheck:|Xshare:)=(.*)#\\1\\2#g\" | \
+				sed -r 's#^\s*#-#g' | \
+				tr '\n' ' ')\" \
+				>\${file};
+				echo \"#### [\${file}]::[\${property}]::[\${value}]\";
+			fi;
+			sudo chmod \${perms} \${file};
+		done;
+		echo '#### Property manifest restore complete';
+		IFS=\${oldifs}
+		set -H;
+	" || exit 1;
+elif [[ ${g_action} == "GENERATE" ]]; then
+	if [[ -d ${g_conf_storage} ]]; then
+		echo "!!!! \"${g_backup}\" already exists, refusing to overwrite";
+		echo "!!!! Use \"delete\" option then rerun \"generate\" if you want to replace property backups and generate new manifests";
+		echo "!!!! Exiting...";
+		exit 1;
+	fi;
+	ssh -t -t ${g_target} "
+		${g_rsync} ${g_propdirs[@]} ${g_conf_storage}/ || exit 1;
+		for x in \$(find ${g_conf_storage} -type f -name '*.properties'); do
+			if [[ \$(basename \${x}) != \"node1.properties\" ]]; then
+				grep -v \"^#\" \${x} | sed '/^[[:space:]]*\$/d' | cut -d= -f1 | sort | awk '{ print \$0 \"=\" }' > \${x}.manifest;
+			else
+				grep -v \"^#\" \${x} | sed -r \"/^java_args/ s/\\s+-|^java_args=-/\\n/g\" | grep -v \"^\\s*$\" | cut -d= -f1 | sort | awk '{ print \$0 \"=\" }' > \${x}.manifest;
+				sed -r -i 's#(Xmx|Xms|Xss|Xmn|Xbootclasspath:|Xloggc:|Xcheck:|Xshare:).*#\\1=#g' \${x}.manifest;
+			fi;
+		done;
+	" || exit 1;
+elif [[ ${g_action} == "DELETE"   ]]; then
+	if [[ -z ${g_conf_storage} || ${g_conf_storage} == "/" ]]; then
+		echo "!!!! The storage directory to be deleted \"${g_conf_storage}\" is either \"/\" or NULL";
+		echo "!!!! This is set within the script so something has gone wrong. Please contact cpq_cloud_release_engineering_ww_grp@oracle.com";
+		echo "!!!! Refusing to delete"
+		echo "!!!! Exiting...";
+		exit 1;
+	fi;
+	ssh -t -t ${g_target} "
+		if [[ -d ${g_conf_storage} ]]; then
+			sudo rm -rf ${g_conf_storage} || exit 1;
+		fi;
+	" || exit 1;
+else
+	usage;
+fi;
+
+exit 0;
+

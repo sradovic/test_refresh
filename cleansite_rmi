@@ -1,0 +1,505 @@
+#!/bin/env bash
+## ---------------------------------------------------------------------------
+## This software is the confidential and proprietary information
+## ("Confidential Information") of Oracle and/or its affiliates
+## ("The Company").
+## You shall not disclose such Confidential Information and shall use
+## and alter it only in accordance with the terms of the agreement(s)
+## you entered into with Oracle and/or its affiliates.
+## ---------------------------------------------------------------------------
+##
+## Team: Oracle CPQ
+##
+## Bundle: cpq-tools
+##
+## Created by adam.yeager, anirban.d.de, bhargavi.raavi, debabrata.shome,
+## lakshmi.nimmagadda, lu.ly, saurabh.k.khanna, wayne.cui on August 1, 2019
+##
+## Copyright (c) 2019, Oracle and/or its affiliates. All rights reserved.
+##
+## ---------------------------------------------------------------------------
+##
+## NAME: cleansite
+##
+## TYPE: Bash Script
+##
+## DESCRIPTION: Remove CPQ from a target site
+##
+## USAGE:
+##   bash cleansite -t|--target <target_site>
+##
+## OPTIONS:
+##   Required
+##     -t|--target) Internal name or IP of target site
+##
+## ---------------------------------------------------------------------------
+## Maintained by cpq_cloud_release_engineering_ww_grp@oracle.com
+## ---------------------------------------------------------------------------
+##
+################################################################################
+## GLOBAL VARIABLES ############################################################
+################################################################################
+#TODO Cleanup weave?
+#TODO Cleanup all containers?
+#TODO: Add header/license/comments/description/starting valid version
+#g_batch_mode='1';    # 0=on, 1=off, See confirm function for implementation (TODO)
+
+declare -r g_dir="$(pwd)";
+
+g_container_name='';
+g_dirs_to_clean=(
+	/bigmac
+	/bmfs*
+	/cpqtmp/*
+	/domain_bak
+	/tmp/admin_tmp
+	/tmp/cpq*
+	/tmp/global.dir
+	/tmp/global.pag
+	/tmp/nm_tmp
+	/tmp/pki_data*.dmp
+	/tmp/_wl_proxy
+	/tmp/ip.dir
+	/tmp/ip.pag
+	/tmp/jazn-data*
+	/upgrade
+	/usr/local/oracle_common
+	/usr/local/oracle_web_tier
+	/usr/java
+	/usr/jdk*
+	/var/tmp/maintenance
+	/var/tmp/outage
+	/var/tmp/refresh
+	/var/tmp/upgrade
+)
+g_dirs_to_protect=(
+	/
+	/bin
+	/boot
+	/cgroup
+	/cpqtmp
+	/dev*
+	/etc
+	/home
+	/lib*
+	/lost+found
+	/media
+	/misc
+	/mnt*
+	/net
+	/opt
+	/proc
+	/root
+	/sbin
+	/selinux
+	/sys
+	/tmp
+	/usr
+	/var
+)
+g_log_dir="${g_dir}/logs/cleansite_logs";
+g_now=$(date +"%Y%m%d%H%M%S");
+g_target='';
+
+################################################################################
+## IMPORTS #####################################################################
+################################################################################
+
+################################################################################
+## MODIFIERS ###################################################################
+################################################################################
+
+# Exit on any failure
+set -e
+#TODO: Add script modifiers
+#TODO: Add Traps
+
+################################################################################
+## ALIASES #####################################################################
+################################################################################
+
+################################################################################
+## FUNCTIONS ###################################################################
+################################################################################
+
+
+
+## Description
+##   Cleanup leftover containers
+## Usage
+##   cleanContainers
+## Variables, Global (* = required)
+##   N/A
+## Variables, Passed (* = required)
+##   N/A
+## Output
+##   Notification of action
+## Return
+##   0) Always returns success
+##
+cleanContainers() {
+	#TODO: Only stop containers if they are running. Otherwise skip. If this fails to stop a running container, fail the cleanup.
+	echo "#### Cleaning containers";
+	runOnTarget "
+                sudo -i su - --session-command '
+		sudo docker ps -a -q | xargs docker stop ;
+		sudo docker ps -a -q | xargs docker rm -v;
+          ';
+	";
+}
+
+cleanImages() {
+        #TODO: Only stop containers if they are running. Otherwise skip. If this fails to stop a running container, fail the cleanup.
+        echo "#### Cleaning containers";
+        runOnTarget "
+                sudo -i su - --session-command '
+                docker images -q | xargs docker rmi;
+          ';
+        ";
+}
+
+
+## Description
+##   Cleanup list of CPQ directories without cleaning protected directories.
+## Usage
+##   cleanDirectories
+## Variables, Global (* = required)
+##   *g_dirs_to_clean (list)
+## Variables, Passed (* = required)
+##   N/A
+## Output
+##   N/A
+## Return
+##   0) Always returns success
+##
+cleanDirectories() {
+	for l_directory in ${g_dirs_to_clean[@]}; do
+		protectDir ${l_directory} || exit 1; #TODO: replace with die function
+		runOnTarget "sudo rm -rf ${l_directory}";
+	done;
+	return 0;
+}
+
+
+## Description
+##   Main execution flow for cleaning target site
+## Usage
+##   cleanTarget
+## Variables, Global (* = required)
+##   N/A
+## Variables, Passed (* = required)
+##   N/A
+## Output
+##   N/A
+## Return
+##   0) Always returns success
+##
+cleanTarget() {
+	stopCpq;
+	removeRoutingRule;
+	disableWeaveService;
+	cleanContainers;
+        cleanImages;
+	cleanDirectories;
+	return 0;
+}
+
+
+
+## Description
+##   Stops Weave service if running on container.
+## Usage
+##   disableWeaveService
+## Variables, Global (* = required)
+##   N/A
+## Variables, Passed (* = required)
+##   N/A
+## Output
+##   N/A
+## Return
+##   0) Always returns success
+##
+disableWeaveService(){
+	runOnTarget "[[ -f /bigmac/container-setup/setupVm.sh ]] && sudo bash /bigmac/container-setup/setupVm.sh -d";
+	return 0;
+}
+
+
+
+## Description
+##   Main execution flow for cleaning target site
+## Usage
+##   getArgs
+## Variables, Global (* = required)
+##   N/A
+## Variables, Passed (* = required)
+##   * @) All command-line arguments except for script name
+##   g_batch_mode
+##   * g_target
+## Output
+##   Unknown arguments
+## Return
+##   0) Successfully loaded required variables
+##   1) Failed to populate all required variables
+##
+getArgs() {
+	if [[ ! $# > 0 ]]; then
+		usage;
+		return 1;
+	fi;
+
+
+	while [[ $# > 0 ]]; do
+		local l_arg="${1}";
+
+		case ${l_arg} in
+
+			-b|--batch-mode)
+				g_batch_mode='0';
+				shift 1;
+				;;
+
+			-t|--target)
+				g_target=${2};
+				shift 2;
+				;;
+
+			*)
+				echo "Unknown argument \"${l_arg}\"";
+				usage;
+				return 1;
+				;;
+
+			esac;
+
+		done;
+
+
+		if [[ -z ${g_target} ]]; then
+			usage;
+			return 1;
+		fi;
+
+
+	return 0;
+}
+
+
+
+## Description
+##   Log this script before changes are made
+## Usage
+##   logThisScript
+## Variables, Global (* = required)
+##   * g_now
+##   * g_logdir
+##   * g_target
+## Variables, Passed (* = required)
+##   N/A
+## Output
+##   Populates log file with contents of stdout and stderr
+## Return
+##   0) Successfully initiated logging
+##   1) Could not initiate logging
+##
+logThisScript() {
+	local l_logfile="${g_log_dir}/${g_target}_deploy_${g_now}.log";
+
+
+	[[ ! -d ${g_log_dir} ]] && mkdir -p ${g_log_dir};
+
+
+	>${l_logfile}
+	exec > >(tee -a "${l_logfile}");
+	exec 2>&1;
+
+
+	[[ -f ${l_logfile} ]] || return 1;
+	return 0;
+}
+
+
+
+## Description
+##   Compares directory against list of protected directories.
+## Usage
+##   protectDir <dir_to_protect>
+## Variables, Global (* = required)
+##   N/A
+## Variables, Passed (* = required)
+##   N/A
+## Output
+##   N/A
+## Return
+##   0) Return success or hard exit with failure.
+##   exit 1) Hard exit on protected directory match.
+##
+protectDir() {
+	local l_dir=${1};
+
+
+	for l_protected_dir in ${g_dirs_to_protect[@]}; do
+		[[ ${l_protected_dir} == ${l_dir} ]] && exit 1;
+	done;
+
+
+	return 0;
+}
+
+
+
+## Description
+##   Removes CPQ routing rule from target
+## Usage
+##   removeRoutingRule
+## Variables, Global (* = required)
+##   N/A
+## Variables, Passed (* = required)
+##   N/A
+## Output
+##   N/A
+## Return
+##   0) Always return success
+##
+removeRoutingRule(){
+	runOnTarget "[[ -f /bigmac/container-setup/routeto.sh ]] && sudo bash /bigmac/container-setup/routeto.sh -f";
+	return 0;
+}
+
+
+
+## Description
+##   String builder to execute commands on target VM.
+## Usage
+##   runOnTarget
+## Variables, Global (* = required)
+##   * g_target
+## Variables, Passed (* = required)
+##   1) Command to run on g_target
+## Output
+##   N/A
+## Return
+##   0) Success
+##   1) Failure
+##
+runOnTarget() {
+	local l_command="${1}";
+	echo "#### ${g_target} >>>> ${l_command}";
+	ssh -t -t ${g_target} "
+		${l_command}
+	" || return 1;
+	return 0;
+}
+
+
+
+## Description
+##   Stop CPQ server
+## Usage
+##   stopCpq
+## Variables, Global (* = required)
+##   * g_target
+## Variables, Passed (* = required)
+##   N/A
+## Output
+##   Notification of execution
+## Return
+##   0) Success
+##   1) Failure
+##
+stopCpq() {
+	#TODO: Only stop cpq if it is running. Otherwise skip. If this fails to stop a running CPQ instance, fail the cleanup.
+	echo "#### Stopping CPQ";
+	runOnTarget "
+		if [[ -f /bigmac/bin/cpqctl ]]; then
+			[[ -f /home/bm/.bash_profile ]] && source /home/bm/.bash_profile;
+			sudo bash /bigmac/bin/cpqctl stop;
+		else
+			echo '/bigmac/bin/cpqctl not found on target.'
+		fi;
+	" || return 1;
+	return 0;
+}
+
+
+
+## Description
+##   Print script usage
+## Usage
+##   usage
+## Variables, Global (* = required)
+##   N/A
+## Variables, Passed (* = required)
+##   N/A
+## Output
+##   Usage
+## Return
+##   0) Always return success
+##
+usage() {
+	echo "Usage: bash cleansite --target <target_site>";
+	return 0;
+}
+
+
+
+## Description
+##   Validate things before running cleanup.
+## Usage
+##   validateBefore
+## Variables, Global (* = required)
+##   * g_target
+## Variables, Passed (* = required)
+##   N/A
+## Output
+##   Notification of execution
+## Return
+##   0) Success
+##   1) Failure
+##
+validateBefore() {
+	echo "#### Validating Arguments and Target";
+	#TODO: Validate that the target can be accessed
+	ssh -o ConnectTimeout=10 ${g_target} "ps &>/dev/null" || return 1;
+
+	#Validate that user has sudo access on target
+	runOnTarget 'sudo ps &>/dev/null' || return 1;
+
+	#TODO: Validate target CPQ version is supported
+	#TODO: Validate that this is running against a CPQ VM
+	#TODO: Validate against logs
+	return 0;
+}
+
+
+
+## Description
+##   Main script flow
+## Usage
+##   main "${@}"
+## Variables, Global (* = required)
+##   N/A
+## Variables, Passed (* = required)
+##   * @
+## Output
+##   N/A
+## Return
+##   0) Success
+##   1) Failure
+##
+main() {
+	getArgs "${@}" || return 1;
+	logThisScript  || return 1;
+	validateBefore || return 1;
+	cleanTarget    || return 1;
+	return 0;
+}
+
+
+
+################################################################################
+## SCRIPT ######################################################################
+################################################################################
+time main "${@}" || exit 1;
+exit 0;
+

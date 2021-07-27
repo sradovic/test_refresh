@@ -1,0 +1,12 @@
+batch_size=
+bm_id=
+bm_name=
+db_catalog=
+db_data_source=
+db_driver=
+db_max_conn=
+db_min_conn=
+db_password=
+db_url=
+db_user=
+next_id_attempts=

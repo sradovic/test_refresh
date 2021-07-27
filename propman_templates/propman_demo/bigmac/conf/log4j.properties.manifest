@@ -1,0 +1,6 @@
+log4j.appender.R=
+log4j.appender.R.File=
+log4j.appender.R.layout=
+log4j.appender.R.layout.ConversionPattern=
+log4j.appender.R.MaxFileSize=
+log4j.rootLogger=
